@@ -19,6 +19,10 @@ MODEL_PATH = Path(__file__).parent / "modelo_canula_ingreso.pkl"
 # Nombres de columnas EXACTOS con los que fue entrenado el modelo, en orden.
 FEATURES = ["tal posta", "fc", "fr", "sat", "l/kg"]
 
+# Punto de corte óptimo (índice de Youden) y su sensibilidad asociada.
+YOUDEN_PCT = 45.9
+YOUDEN_SENS = 71
+
 st.set_page_config(
     page_title="PediaFlow-AI",
     page_icon="🫁",
@@ -54,11 +58,31 @@ st.markdown(
       .pf-result .value {font-size: 3.4rem; font-weight: 800; line-height: 1.05; margin: 4px 0 2px;}
       .pf-result .level {font-size: 1.15rem; font-weight: 700; opacity: .95;}
 
+      .pf-bar-wrap {position: relative; margin: 18px 0 58px;}
       .pf-bar-bg {
         width: 100%; height: 22px; background: rgba(255,255,255,.28);
-        border-radius: 999px; overflow: hidden; margin: 16px 0 10px;
+        border-radius: 999px; overflow: hidden;
       }
       .pf-bar-fill {height: 100%; border-radius: 999px; background: #fff; transition: width .6s ease;}
+
+      /* Marca fija del índice de Youden: línea que atraviesa la barra + leyenda debajo */
+      .pf-youden-line {
+        position: absolute; top: -7px; bottom: -7px; width: 3px;
+        background: #fff; border-radius: 2px; transform: translateX(-50%);
+        box-shadow: 0 0 0 1.5px rgba(0,0,0,.35);
+      }
+      .pf-youden-tag {
+        position: absolute; top: calc(100% + 10px); transform: translateX(-50%);
+        white-space: nowrap; text-align: center; line-height: 1.25;
+        font-size: .74rem; font-weight: 800; letter-spacing: .4px;
+        background: rgba(0,0,0,.30); padding: 5px 10px; border-radius: 8px;
+      }
+      .pf-youden-tag::before {
+        content: ""; position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
+        border: 6px solid transparent; border-top: 0; border-bottom-color: rgba(0,0,0,.30);
+      }
+      .pf-youden-tag span {font-weight: 600; letter-spacing: .2px; opacity: .95;}
+
       .pf-scale {display: flex; justify-content: space-between; font-size: .8rem; opacity: .9;}
 
       .pf-alert {
@@ -125,7 +149,9 @@ st.markdown(
         .pf-result .label {font-size: .78rem;}
         .pf-result .value {font-size: 2.6rem;}
         .pf-result .level {font-size: 1rem;}
-        .pf-bar-bg {height: 18px; margin: 12px 0 8px;}
+        .pf-bar-wrap {margin: 14px 0 54px;}
+        .pf-bar-bg {height: 18px;}
+        .pf-youden-tag {font-size: .66rem; padding: 4px 8px;}
         .pf-scale {font-size: .72rem;}
 
         .pf-alert {padding: 14px 14px; font-size: .93rem; border-radius: 12px;}
@@ -248,6 +274,8 @@ if calcular:
         st.stop()
 
     pct = p * 100
+    pct_txt = f"{pct:.1f}".replace(".", ",")
+    youden_txt = f"{YOUDEN_PCT:.1f}".replace(".", ",")
 
     if pct < 30:
         color, color_dark, icono = "#22c55e", "#15803d", "🟢"
@@ -278,9 +306,16 @@ if calcular:
         f"""
         <div class="pf-result" style="background: linear-gradient(135deg, {color}, {color_dark});">
           <div class="label">Probabilidad de fracaso de CNAF</div>
-          <div class="value">{pct:.1f}%</div>
+          <div class="value">{pct_txt}%</div>
           <div class="level">{icono} {nivel} · {subtitulo}</div>
-          <div class="pf-bar-bg"><div class="pf-bar-fill" style="width:{pct:.1f}%"></div></div>
+          <div class="pf-bar-wrap">
+            <div class="pf-bar-bg"><div class="pf-bar-fill" style="width:{pct:.1f}%"></div></div>
+            <div class="pf-youden-line" style="left:{YOUDEN_PCT}%"></div>
+            <div class="pf-youden-tag" style="left:{YOUDEN_PCT}%">
+              ÍNDICE DE YOUDEN {youden_txt}%<br>
+              <span>Sensibilidad {YOUDEN_SENS}%</span>
+            </div>
+          </div>
           <div class="pf-scale"><span>0%</span><span>30%</span><span>70%</span><span>100%</span></div>
         </div>
         <div class="pf-alert" style="border-color:{color};">
