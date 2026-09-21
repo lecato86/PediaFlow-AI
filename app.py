@@ -77,6 +77,64 @@ st.markdown(
       div.stButton > button:hover {background: linear-gradient(135deg, #0c3d68, #17679a); color: #fff;}
 
       .pf-foot {color: #8a97a8; font-size: .8rem; text-align: center; margin-top: 30px;}
+
+      /* Controles táctiles más cómodos (todas las pantallas) */
+      div.stButton > button {min-height: 52px;}
+      [data-baseweb="slider"] [role="slider"] {width: 22px !important; height: 22px !important;}
+
+      /* ------------------------------------------------------------------ */
+      /* Celular: ancho <= 640px                                             */
+      /* ------------------------------------------------------------------ */
+      @media (max-width: 640px) {
+        .block-container {padding: 1rem .9rem 2.5rem !important;}
+
+        .pf-hero {padding: 18px 18px; border-radius: 14px; margin-bottom: 16px;}
+        .pf-hero h1 {font-size: 1.45rem;}
+        .pf-hero p  {font-size: .9rem; line-height: 1.35;}
+
+        .pf-section {font-size: .98rem;}
+        .pf-hint {font-size: .8rem;}
+
+        /* Slider y campo numérico en la MISMA fila (Streamlit los apila por defecto) */
+        [data-testid="stHorizontalBlock"] {
+          flex-direction: row !important; flex-wrap: nowrap !important;
+          gap: .6rem !important; align-items: flex-end;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child,
+        [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+          flex: 1 1 0 !important; min-width: 0 !important; width: auto !important;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child,
+        [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
+          flex: 0 0 88px !important; min-width: 88px !important; width: 88px !important;
+        }
+        /* Ocultar botones +/- del campo numérico para ganar ancho */
+        .stNumberInput button {display: none !important;}
+        .stNumberInput input {text-align: center; font-weight: 700; padding: .45rem .3rem;}
+
+        .pf-result {padding: 20px 18px; border-radius: 14px;}
+        .pf-result .label {font-size: .78rem;}
+        .pf-result .value {font-size: 2.6rem;}
+        .pf-result .level {font-size: 1rem;}
+        .pf-bar-bg {height: 18px; margin: 12px 0 8px;}
+        .pf-scale {font-size: .72rem;}
+
+        .pf-alert {padding: 14px 14px; font-size: .93rem; border-radius: 12px;}
+        .pf-alert b {font-size: .98rem;}
+
+        div.stButton > button {font-size: 1rem;}
+        .pf-foot {font-size: .72rem; margin-top: 22px;}
+      }
+
+      /* Pantallas muy chicas (<= 380px) */
+      @media (max-width: 380px) {
+        .pf-hero h1 {font-size: 1.3rem;}
+        .pf-result .value {font-size: 2.2rem;}
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child,
+        [data-testid="stHorizontalBlock"] > [data-testid="column"]:last-child {
+          flex: 0 0 76px !important; min-width: 76px !important; width: 76px !important;
+        }
+      }
     </style>
     """,
     unsafe_allow_html=True,
