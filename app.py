@@ -56,6 +56,9 @@ FEATURES = ["tal posta", "fc", "fr", "sat", "l/kg"]
 YOUDEN_PCT = 45.9
 YOUDEN_SENS = 71
 
+# Crédito de autoría mostrado bajo el logo y en el pie.
+AUTOR = "Catriel Rossi"
+
 def icono_pagina():
     """Ícono de pestaña: el logo como imagen PIL (evita problemas de extensión) o un emoji."""
     if LOGO_PATH is None or LOGO_PATH.suffix.lower() == ".svg":
@@ -141,6 +144,18 @@ st.markdown(
       }
       .pf-hero-banner p {margin: 18px auto 0; max-width: 560px; color: #a9b8cf; font-size: 1rem; line-height: 1.45;}
       .pf-hero-banner .pf-chip {margin-top: 12px;}
+
+      /* Crédito de autoría */
+      .pf-credit {
+        margin-top: 6px; color: #8fa1bb; font-size: .8rem; letter-spacing: 1.4px;
+        text-transform: uppercase; font-weight: 600;
+      }
+      .pf-credit b {
+        font-weight: 800; letter-spacing: .6px; text-transform: none; font-size: .92rem;
+        background: linear-gradient(90deg, #6fb6ff 0%, #5fe3d9 100%);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+      .pf-hero .pf-credit {margin-top: 4px;}
 
       /* Formulario */
       .pf-section {font-weight: 800; color: #e5ecf6; font-size: 1.1rem; margin: 6px 0 2px;}
@@ -243,6 +258,8 @@ st.markdown(
         .pf-hero-banner {margin: 0 auto 12px;}
         .pf-hero-banner img {max-width: 300px;}
         .pf-hero-banner p {font-size: .88rem; margin-top: 12px;}
+        .pf-credit {font-size: .72rem; letter-spacing: 1.1px;}
+        .pf-credit b {font-size: .84rem;}
 
         .pf-section {font-size: .98rem;}
         .pf-hint {font-size: .8rem;}
@@ -341,6 +358,7 @@ if _logo:
         f"""
         <div class="pf-hero-banner">
           <img src="{_logo}" alt="PediaFlow-AI">
+          <div class="pf-credit">Powered by <b>{AUTOR}</b></div>
           <p>Predicción de riesgo de fracaso de cánula nasal de alto flujo (CNAF) al ingreso</p>
           <span class="pf-chip">Modelo predictivo · Pediatría</span>
         </div>
@@ -354,11 +372,12 @@ else:
           <div class="pf-logo-fallback">🫁</div>
           <div>
             <h1>PediaFlow-AI</h1>
+            <div class="pf-credit">Powered by <b>{AUTOR}</b></div>
             <p>Predicción de riesgo de fracaso de cánula nasal de alto flujo (CNAF) al ingreso</p>
             <span class="pf-chip">Modelo predictivo · Pediatría</span>
           </div>
         </div>
-        """,
+        """.replace("{AUTOR}", AUTOR),
         unsafe_allow_html=True,
     )
 
@@ -518,7 +537,7 @@ st.markdown(
 )
 
 st.markdown(
-    '<div class="pf-foot">Herramienta de apoyo a la decisión clínica. '
-    "No reemplaza el criterio médico.</div>",
+    f'<div class="pf-foot">PediaFlow-AI · Powered by {AUTOR}<br>'
+    "Herramienta de apoyo a la decisión clínica. No reemplaza el criterio médico.</div>",
     unsafe_allow_html=True,
 )
