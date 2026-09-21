@@ -134,19 +134,12 @@ st.markdown(
       /* Encabezado con logo-banner (el logo trae nombre y fondo propios) */
       .pf-hero-banner {text-align: center; margin: -10px auto 14px; padding: 0;}
       .pf-hero-banner img {
-        display: block; margin: 0 auto; width: 100%; max-width: 460px; height: auto;
+        display: block; margin: 0 auto; width: 100%; max-width: 440px; height: auto;
         border: 0; border-radius: 0; box-shadow: none; background: transparent;
-        /* Los bordes se funden con el fondo de la página: sin marco ni rectángulo */
-        -webkit-mask-image:
-          linear-gradient(to right,  transparent 0%, #000 9%, #000 91%, transparent 100%),
-          linear-gradient(to bottom, transparent 0%, #000 9%, #000 91%, transparent 100%);
-        -webkit-mask-composite: source-in;
-                mask-image:
-          linear-gradient(to right,  transparent 0%, #000 9%, #000 91%, transparent 100%),
-          linear-gradient(to bottom, transparent 0%, #000 9%, #000 91%, transparent 100%);
-                mask-composite: intersect;
+        /* PNG con transparencia real: solo un halo suave detrás */
+        filter: drop-shadow(0 18px 40px rgba(0,0,0,.45)) drop-shadow(0 0 28px rgba(63,184,216,.18));
       }
-      .pf-hero-banner p {margin: 4px auto 0; max-width: 560px; color: #a9b8cf; font-size: 1rem; line-height: 1.45;}
+      .pf-hero-banner p {margin: 18px auto 0; max-width: 560px; color: #a9b8cf; font-size: 1rem; line-height: 1.45;}
       .pf-hero-banner .pf-chip {margin-top: 12px;}
 
       /* Formulario */
@@ -247,9 +240,9 @@ st.markdown(
         .pf-hero h1 {font-size: 1.45rem;}
         .pf-hero p  {font-size: .88rem; line-height: 1.35;}
         .pf-chip {font-size: .66rem;}
-        .pf-hero-banner {margin: -6px auto 10px;}
-        .pf-hero-banner img {max-width: 320px;}
-        .pf-hero-banner p {font-size: .88rem; margin-top: 2px;}
+        .pf-hero-banner {margin: 0 auto 12px;}
+        .pf-hero-banner img {max-width: 300px;}
+        .pf-hero-banner p {font-size: .88rem; margin-top: 12px;}
 
         .pf-section {font-size: .98rem;}
         .pf-hint {font-size: .8rem;}
