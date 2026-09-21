@@ -38,3 +38,15 @@ en la misma carpeta que `app.py`.
 - 🟢 **Riesgo Bajo (Paciente Seguro)**: probabilidad de fracaso menor al 30 % (saturando bien, TAL bajo).
 - 🟡 **Riesgo Moderado (Monitoreo Estricto)**: entre 30 % y 70 %, zona gris donde el paciente empieza a descompensarse.
 - 🚨 **Riesgo Alto (Alerta de Fallo)**: mayor al 70 %, el modelo confirma de forma multivariada que el paciente comparte el perfil del Cluster 1 de fracaso histórico.
+
+## Sobre el modelo
+
+- **Enfoque**: análisis multivariado de pacientes pediátricos con CNAF.
+- **Segmentación**: reducción de dimensionalidad con PCA y clustering con K-Means,
+  que identificó el clúster de fracaso histórico (Cluster 1).
+- **Algoritmo**: regresión logística (logistic regression), entrenada con
+  scikit-learn 1.6.1.
+- **Desempeño**: AUC de 96 %.
+- **Punto de corte**: índice de Youden en 45,9 % de probabilidad, con
+  sensibilidad del 71 %.
+- **Autor**: Catriel Rossi.

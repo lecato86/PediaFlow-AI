@@ -59,6 +59,9 @@ YOUDEN_SENS = 71
 # Crédito de autoría mostrado bajo el logo y en el pie.
 AUTOR = "Catriel Rossi"
 
+# Desempeño del modelo (área bajo la curva ROC, en %).
+AUC_PCT = 96
+
 def icono_pagina():
     """Ícono de pestaña: el logo como imagen PIL (evita problemas de extensión) o un emoji."""
     if LOGO_PATH is None or LOGO_PATH.suffix.lower() == ".svg":
@@ -235,6 +238,27 @@ st.markdown(
       .pf-legend-row b {display: block; margin-bottom: 2px; color: #fff;}
       .pf-dot {flex: 0 0 14px; width: 14px; height: 14px; border-radius: 50%; margin-top: 5px; box-shadow: 0 0 10px currentColor;}
 
+      /* Sobre el modelo */
+      .pf-method {padding: 18px 22px; margin-top: 16px; color: #d5deeb;}
+      .pf-method-grid {display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 4px 0 14px;}
+      .pf-stat {
+        background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09);
+        border-radius: 12px; padding: 12px 12px; text-align: center;
+      }
+      .pf-stat-label {font-size: .68rem; letter-spacing: 1.2px; text-transform: uppercase; color: #8fa1bb; font-weight: 700;}
+      .pf-stat-value {font-size: .95rem; font-weight: 800; color: #fff; margin-top: 4px; line-height: 1.2;}
+      .pf-stat-hl {
+        background: linear-gradient(135deg, rgba(47,134,214,.28), rgba(95,227,217,.22));
+        border-color: rgba(95,227,217,.45);
+      }
+      .pf-stat-hl .pf-stat-value {
+        font-size: 1.6rem; letter-spacing: -.5px;
+        background: linear-gradient(90deg, #ffffff, #7fe6e0);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+      .pf-method-text {margin: 0; font-size: .9rem; line-height: 1.55; color: #b9c6d9;}
+      .pf-method-text b {color: #fff; font-weight: 700;}
+
       .pf-foot {color: #7f91ab; font-size: .8rem; text-align: center; margin-top: 30px;}
 
       /* Expander y tabla en oscuro */
@@ -296,6 +320,12 @@ st.markdown(
         .pf-foot {font-size: .72rem; margin-top: 22px;}
         .pf-legend {padding: 14px 14px; margin-top: 20px;}
         .pf-legend-row {font-size: .85rem; gap: 10px;}
+        .pf-method {padding: 14px 14px; margin-top: 14px;}
+        .pf-method-grid {grid-template-columns: repeat(2, 1fr); gap: 8px;}
+        .pf-stat {padding: 10px 8px;}
+        .pf-stat-value {font-size: .88rem;}
+        .pf-stat-hl .pf-stat-value {font-size: 1.4rem;}
+        .pf-method-text {font-size: .85rem;}
       }
 
       /* Pantallas muy chicas (<= 380px) */
@@ -533,6 +563,42 @@ st.markdown(
       </div>
     </div>
     """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    f"""
+    <div class="pf-glass pf-method">
+      <div class="pf-legend-title">Sobre el modelo</div>
+      <div class="pf-method-grid">
+        <div class="pf-stat">
+          <div class="pf-stat-label">Enfoque</div>
+          <div class="pf-stat-value">Análisis multivariado</div>
+        </div>
+        <div class="pf-stat">
+          <div class="pf-stat-label">Segmentación</div>
+          <div class="pf-stat-value">K-Means sobre PCA</div>
+        </div>
+        <div class="pf-stat">
+          <div class="pf-stat-label">Algoritmo</div>
+          <div class="pf-stat-value">Regresión logística</div>
+        </div>
+        <div class="pf-stat pf-stat-hl">
+          <div class="pf-stat-label">AUC</div>
+          <div class="pf-stat-value">{AUC_PCT}%</div>
+        </div>
+      </div>
+      <p class="pf-method-text">
+        PediaFlow-AI se construyó a partir de un <b>análisis multivariado</b> de pacientes
+        pediátricos con CNAF. Primero se redujo la dimensionalidad con <b>PCA</b> (análisis de
+        componentes principales) y se identificaron perfiles de pacientes mediante
+        <b>K-Means</b>, distinguiendo el clúster de fracaso histórico. Luego se entrenó un
+        modelo de <b>regresión logística</b> (logistic regression) que alcanzó un
+        <b>AUC de {AUC_PCT}%</b>; el punto de corte óptimo se fijó con el índice de Youden
+        ({YOUDEN_PCT:.1f}%, sensibilidad {YOUDEN_SENS}%).
+      </p>
+    </div>
+    """.replace(f"{YOUDEN_PCT:.1f}", f"{YOUDEN_PCT:.1f}".replace(".", ",")),
     unsafe_allow_html=True,
 )
 
