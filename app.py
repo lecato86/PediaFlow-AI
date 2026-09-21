@@ -86,13 +86,11 @@ st.markdown(
       html, body, [class*="css"], .stApp {font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;}
       #MainMenu, footer, header {visibility: hidden;}
 
-      /* Fondo general: azul profundo con destellos */
+      /* Fondo general: mismo degradado radial que el logo
+         (muestreado del archivo: #09405F arriba-centro, #0A2945 medio, #02081E abajo) */
       .stApp {
         background:
-          radial-gradient(1100px 600px at 10% -10%, rgba(56,182,201,.28), transparent 60%),
-          radial-gradient(900px 500px at 100% 0%, rgba(99,102,241,.22), transparent 60%),
-          radial-gradient(700px 500px at 50% 110%, rgba(16,185,129,.14), transparent 60%),
-          linear-gradient(180deg, #0b1220 0%, #0d1730 55%, #0b1220 100%);
+          radial-gradient(ellipse 130% 75% at 50% 0%, #0a4262 0%, #0a2f4d 35%, #0a2945 55%, #04142a 80%, #02081e 100%);
         background-attachment: fixed;
         color: #e5ecf6;
       }
@@ -129,18 +127,26 @@ st.markdown(
       .pf-chip {
         display: inline-block; margin-top: 10px; padding: 4px 10px; border-radius: 999px;
         font-size: .72rem; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
-        color: #9be7f2; background: rgba(56,182,201,.14); border: 1px solid rgba(56,182,201,.35);
+        color: #7fe6e0; border: 1px solid rgba(95,227,217,.35);
+        background: linear-gradient(90deg, rgba(47,134,214,.22), rgba(95,227,217,.18));
       }
 
       /* Encabezado con logo-banner (el logo trae nombre y fondo propios) */
-      .pf-hero-banner {text-align: center; margin: 0 auto 22px; padding: 4px 0 0;}
+      .pf-hero-banner {text-align: center; margin: -10px auto 14px; padding: 0;}
       .pf-hero-banner img {
-        display: block; margin: 0 auto; width: 100%; max-width: 380px; height: auto;
-        border-radius: 28px;
-        box-shadow: 0 24px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.08),
-                    0 0 60px rgba(56,182,201,.18);
+        display: block; margin: 0 auto; width: 100%; max-width: 460px; height: auto;
+        border: 0; border-radius: 0; box-shadow: none; background: transparent;
+        /* Los bordes se funden con el fondo de la página: sin marco ni rectángulo */
+        -webkit-mask-image:
+          linear-gradient(to right,  transparent 0%, #000 9%, #000 91%, transparent 100%),
+          linear-gradient(to bottom, transparent 0%, #000 9%, #000 91%, transparent 100%);
+        -webkit-mask-composite: source-in;
+                mask-image:
+          linear-gradient(to right,  transparent 0%, #000 9%, #000 91%, transparent 100%),
+          linear-gradient(to bottom, transparent 0%, #000 9%, #000 91%, transparent 100%);
+                mask-composite: intersect;
       }
-      .pf-hero-banner p {margin: 18px auto 0; max-width: 560px; color: #a9b8cf; font-size: 1rem; line-height: 1.45;}
+      .pf-hero-banner p {margin: 4px auto 0; max-width: 560px; color: #a9b8cf; font-size: 1rem; line-height: 1.45;}
       .pf-hero-banner .pf-chip {margin-top: 12px;}
 
       /* Formulario */
@@ -157,12 +163,13 @@ st.markdown(
 
       div.stButton > button {
         width: 100%; min-height: 54px; border-radius: 14px; font-weight: 800; font-size: 1.05rem;
-        letter-spacing: .3px; border: none; color: #06121f;
-        background: linear-gradient(135deg, #38b6c9 0%, #7ee0ee 100%);
-        box-shadow: 0 12px 30px rgba(56,182,201,.35);
+        letter-spacing: .3px; border: none; color: #04101f;
+        /* Degradé azul → turquesa, como los pulmones y el "AI" del logo */
+        background: linear-gradient(135deg, #2f86d6 0%, #3fb8d8 55%, #5fe3d9 100%);
+        box-shadow: 0 12px 30px rgba(63,184,216,.35);
         transition: transform .12s ease, box-shadow .12s ease;
       }
-      div.stButton > button:hover {transform: translateY(-1px); box-shadow: 0 16px 36px rgba(56,182,201,.45); color: #06121f;}
+      div.stButton > button:hover {transform: translateY(-1px); box-shadow: 0 16px 36px rgba(63,184,216,.5); color: #04101f;}
       div.stButton > button:active {transform: translateY(0);}
 
       /* Resultado */
@@ -240,9 +247,9 @@ st.markdown(
         .pf-hero h1 {font-size: 1.45rem;}
         .pf-hero p  {font-size: .88rem; line-height: 1.35;}
         .pf-chip {font-size: .66rem;}
-        .pf-hero-banner {margin-bottom: 16px;}
-        .pf-hero-banner img {max-width: 260px; border-radius: 20px;}
-        .pf-hero-banner p {font-size: .88rem; margin-top: 14px;}
+        .pf-hero-banner {margin: -6px auto 10px;}
+        .pf-hero-banner img {max-width: 320px;}
+        .pf-hero-banner p {font-size: .88rem; margin-top: 2px;}
 
         .pf-section {font-size: .98rem;}
         .pf-hint {font-size: .8rem;}
