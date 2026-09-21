@@ -34,5 +34,7 @@ en la misma carpeta que `app.py`.
 | Saturación de Oxígeno (%)     | `sat`              | 70 – 100  |
 | Flujo (L/kg)                  | `l/kg`             | 0.5 – 3.0 |
 
-La salida es la probabilidad de fracaso de CNAF con semáforo:
-verde < 30 %, amarillo 30–70 %, rojo > 70 %.
+## Escala de riesgo
+- 🟢 **Riesgo Bajo (Paciente Seguro)**: probabilidad de fracaso menor al 30 % (saturando bien, TAL bajo).
+- 🟡 **Riesgo Moderado (Monitoreo Estricto)**: entre 30 % y 70 %, zona gris donde el paciente empieza a descompensarse.
+- 🚨 **Riesgo Alto (Alerta de Fallo)**: mayor al 70 %, el modelo confirma de forma multivariada que el paciente comparte el perfil del Cluster 1 de fracaso histórico.

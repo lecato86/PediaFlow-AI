@@ -78,6 +78,15 @@ st.markdown(
 
       .pf-foot {color: #8a97a8; font-size: .8rem; text-align: center; margin-top: 30px;}
 
+      .pf-legend {
+        background: #f6f9fc; border: 1px solid #e6ebf1; border-radius: 14px;
+        padding: 16px 20px; margin-top: 26px; color: #1f2937;
+      }
+      .pf-legend-title {font-weight: 700; color: #0f4c81; margin-bottom: 10px; font-size: .98rem;}
+      .pf-legend-row {display: flex; gap: 12px; align-items: flex-start; margin: 8px 0; font-size: .92rem; line-height: 1.4;}
+      .pf-legend-row b {display: block; margin-bottom: 2px;}
+      .pf-dot {flex: 0 0 14px; width: 14px; height: 14px; border-radius: 50%; margin-top: 4px;}
+
       /* Controles táctiles más cómodos (todas las pantallas) */
       div.stButton > button {min-height: 52px;}
       [data-baseweb="slider"] [role="slider"] {width: 22px !important; height: 22px !important;}
@@ -124,6 +133,8 @@ st.markdown(
 
         div.stButton > button {font-size: 1rem;}
         .pf-foot {font-size: .72rem; margin-top: 22px;}
+        .pf-legend {padding: 14px 14px; margin-top: 20px;}
+        .pf-legend-row {font-size: .85rem; gap: 10px;}
       }
 
       /* Pantallas muy chicas (<= 380px) */
@@ -239,22 +250,28 @@ if calcular:
     pct = p * 100
 
     if pct < 30:
-        color, color_dark, nivel, icono = "#22c55e", "#15803d", "RIESGO BAJO", "✅"
+        color, color_dark, icono = "#22c55e", "#15803d", "🟢"
+        nivel, subtitulo = "RIESGO BAJO", "Paciente Seguro"
         mensaje = (
-            "Baja probabilidad de fracaso de CNAF. Continuar con el soporte actual "
-            "y monitoreo clínico habitual."
+            "Probabilidad de fracaso menor al 30 %. El paciente satura bien y presenta "
+            "un Score de Tal bajo. Continuar con el soporte actual y el monitoreo habitual."
         )
     elif pct <= 70:
-        color, color_dark, nivel, icono = "#f59e0b", "#b45309", "RIESGO MODERADO", "⚠️"
+        color, color_dark, icono = "#f59e0b", "#b45309", "🟡"
+        nivel, subtitulo = "RIESGO MODERADO", "Monitoreo Estricto"
         mensaje = (
-            "Probabilidad intermedia de fracaso. Se recomienda vigilancia estrecha, "
-            "reevaluación clínica frecuente y optimización de parámetros."
+            "Probabilidad de fracaso entre 30 % y 70 %. Zona gris donde el paciente "
+            "empieza a descompensarse. Se recomienda vigilancia estrecha, reevaluación "
+            "clínica frecuente y optimización de parámetros."
         )
     else:
-        color, color_dark, nivel, icono = "#ef4444", "#b91c1c", "RIESGO ALTO", "🚨"
+        color, color_dark, icono = "#ef4444", "#b91c1c", "🚨"
+        nivel, subtitulo = "RIESGO ALTO", "Alerta de Fallo"
         mensaje = (
-            "Alta probabilidad de fracaso de CNAF. Considerar escalar el soporte "
-            "respiratorio y evaluar ingreso o traslado a cuidados intensivos."
+            "Probabilidad de fracaso mayor al 70 %. El modelo confirma de forma "
+            "multivariada que el paciente comparte el perfil del Cluster 1 de fracaso "
+            "histórico. Considerar escalar el soporte respiratorio y evaluar ingreso o "
+            "traslado a cuidados intensivos."
         )
 
     st.markdown(
@@ -262,12 +279,12 @@ if calcular:
         <div class="pf-result" style="background: linear-gradient(135deg, {color}, {color_dark});">
           <div class="label">Probabilidad de fracaso de CNAF</div>
           <div class="value">{pct:.1f}%</div>
-          <div class="level">{icono} {nivel}</div>
+          <div class="level">{icono} {nivel} · {subtitulo}</div>
           <div class="pf-bar-bg"><div class="pf-bar-fill" style="width:{pct:.1f}%"></div></div>
           <div class="pf-scale"><span>0%</span><span>30%</span><span>70%</span><span>100%</span></div>
         </div>
         <div class="pf-alert" style="border-color:{color};">
-          <b>{icono} Alerta clínica · {nivel.title()}</b>
+          <b>{icono} Alerta clínica · {nivel.title()} ({subtitulo})</b>
           {mensaje}
         </div>
         """,
@@ -285,6 +302,31 @@ if calcular:
             hide_index=True,
             use_container_width=True,
         )
+
+st.markdown(
+    """
+    <div class="pf-legend">
+      <div class="pf-legend-title">Escala de riesgo</div>
+      <div class="pf-legend-row">
+        <span class="pf-dot" style="background:#22c55e"></span>
+        <div><b>🟢 Riesgo Bajo · Paciente Seguro</b>
+        Probabilidad de fracaso menor al 30 % (saturando bien, TAL bajo).</div>
+      </div>
+      <div class="pf-legend-row">
+        <span class="pf-dot" style="background:#f59e0b"></span>
+        <div><b>🟡 Riesgo Moderado · Monitoreo Estricto</b>
+        Entre 30 % y 70 %: zona gris donde el paciente empieza a descompensarse.</div>
+      </div>
+      <div class="pf-legend-row">
+        <span class="pf-dot" style="background:#ef4444"></span>
+        <div><b>🚨 Riesgo Alto · Alerta de Fallo</b>
+        Mayor al 70 %: el modelo confirma de forma multivariada que el paciente comparte
+        el perfil del Cluster 1 de fracaso histórico.</div>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.markdown(
     '<div class="pf-foot">Herramienta de apoyo a la decisión clínica. '
