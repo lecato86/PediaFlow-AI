@@ -17,7 +17,37 @@ import streamlit as st
 # --------------------------------------------------------------------------- #
 BASE_DIR = Path(__file__).parent
 MODEL_PATH = BASE_DIR / "modelo_canula_ingreso.pkl"
-LOGO_PATH = BASE_DIR / "assets" / "logo.png"
+ASSETS_DIR = BASE_DIR / "assets"
+
+
+def buscar_logo():
+    """Devuelve la ruta del logo (assets/logo.*, sin importar mayúsculas) o None."""
+    if not ASSETS_DIR.exists():
+        return None
+    for f in sorted(ASSETS_DIR.iterdir()):
+        if f.is_file() and f.stem.lower() == "logo" and f.suffix.lower() in {
+            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"
+        }:
+            return f
+    return None
+
+
+def mime_imagen(data: bytes, sufijo: str) -> str:
+    """Detecta el tipo real de imagen por sus primeros bytes (el nombre puede engañar)."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if sufijo.lower() == ".svg":
+        return "image/svg+xml"
+    return "image/png"
+
+
+LOGO_PATH = buscar_logo()
 
 # Nombres de columnas EXACTOS con los que fue entrenado el modelo, en orden.
 FEATURES = ["tal posta", "fc", "fr", "sat", "l/kg"]
@@ -26,9 +56,21 @@ FEATURES = ["tal posta", "fc", "fr", "sat", "l/kg"]
 YOUDEN_PCT = 45.9
 YOUDEN_SENS = 71
 
+def icono_pagina():
+    """Ícono de pestaña: el logo como imagen PIL (evita problemas de extensión) o un emoji."""
+    if LOGO_PATH is None or LOGO_PATH.suffix.lower() == ".svg":
+        return "🫁"
+    try:
+        from PIL import Image
+
+        return Image.open(LOGO_PATH)
+    except Exception:  # noqa: BLE001
+        return "🫁"
+
+
 st.set_page_config(
     page_title="PediaFlow-AI",
-    page_icon=str(LOGO_PATH) if LOGO_PATH.exists() else "🫁",
+    page_icon=icono_pagina(),
     layout="centered",
     initial_sidebar_state="collapsed",
 )
@@ -89,6 +131,17 @@ st.markdown(
         font-size: .72rem; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
         color: #9be7f2; background: rgba(56,182,201,.14); border: 1px solid rgba(56,182,201,.35);
       }
+
+      /* Encabezado con logo-banner (el logo trae nombre y fondo propios) */
+      .pf-hero-banner {text-align: center; margin: 0 auto 22px; padding: 4px 0 0;}
+      .pf-hero-banner img {
+        display: block; margin: 0 auto; width: 100%; max-width: 380px; height: auto;
+        border-radius: 28px;
+        box-shadow: 0 24px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.08),
+                    0 0 60px rgba(56,182,201,.18);
+      }
+      .pf-hero-banner p {margin: 18px auto 0; max-width: 560px; color: #a9b8cf; font-size: 1rem; line-height: 1.45;}
+      .pf-hero-banner .pf-chip {margin-top: 12px;}
 
       /* Formulario */
       .pf-section {font-weight: 800; color: #e5ecf6; font-size: 1.1rem; margin: 6px 0 2px;}
@@ -187,6 +240,9 @@ st.markdown(
         .pf-hero h1 {font-size: 1.45rem;}
         .pf-hero p  {font-size: .88rem; line-height: 1.35;}
         .pf-chip {font-size: .66rem;}
+        .pf-hero-banner {margin-bottom: 16px;}
+        .pf-hero-banner img {max-width: 260px; border-radius: 20px;}
+        .pf-hero-banner p {font-size: .88rem; margin-top: 14px;}
 
         .pf-section {font-size: .98rem;}
         .pf-hint {font-size: .8rem;}
@@ -249,11 +305,20 @@ def cargar_modelo(path: Path):
 
 
 @st.cache_data
-def logo_base64(path: Path):
-    """Devuelve el logo como data-URI para incrustarlo en el encabezado."""
-    if not path.exists():
+def _logo_data_uri(path_str: str, mtime: float, size: int):
+    """Data-URI del logo. La caché se invalida si el archivo cambia (mtime/tamaño)."""
+    path = Path(path_str)
+    data = path.read_bytes()
+    mime = mime_imagen(data, path.suffix)
+    return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+
+
+def logo_data_uri():
+    """Devuelve el logo como data-URI, o None si no hay archivo (sin cachear el None)."""
+    if LOGO_PATH is None or not LOGO_PATH.exists():
         return None
-    return base64.b64encode(path.read_bytes()).decode()
+    st_ = LOGO_PATH.stat()
+    return _logo_data_uri(str(LOGO_PATH), st_.st_mtime, st_.st_size)
 
 
 if not MODEL_PATH.exists():
@@ -268,26 +333,34 @@ modelo = cargar_modelo(MODEL_PATH)
 # --------------------------------------------------------------------------- #
 # Encabezado
 # --------------------------------------------------------------------------- #
-_logo = logo_base64(LOGO_PATH)
-logo_html = (
-    f'<img src="data:image/png;base64,{_logo}" alt="PediaFlow-AI">'
-    if _logo
-    else '<div class="pf-logo-fallback">🫁</div>'
-)
+_logo = logo_data_uri()
 
-st.markdown(
-    f"""
-    <div class="pf-glass pf-hero">
-      {logo_html}
-      <div>
-        <h1>PediaFlow-AI</h1>
-        <p>Predicción de riesgo de fracaso de cánula nasal de alto flujo (CNAF) al ingreso</p>
-        <span class="pf-chip">Modelo predictivo · Pediatría</span>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+if _logo:
+    # El logo ya incluye el nombre y el fondo oscuro: se muestra como banner.
+    st.markdown(
+        f"""
+        <div class="pf-hero-banner">
+          <img src="{_logo}" alt="PediaFlow-AI">
+          <p>Predicción de riesgo de fracaso de cánula nasal de alto flujo (CNAF) al ingreso</p>
+          <span class="pf-chip">Modelo predictivo · Pediatría</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        """
+        <div class="pf-glass pf-hero">
+          <div class="pf-logo-fallback">🫁</div>
+          <div>
+            <h1>PediaFlow-AI</h1>
+            <p>Predicción de riesgo de fracaso de cánula nasal de alto flujo (CNAF) al ingreso</p>
+            <span class="pf-chip">Modelo predictivo · Pediatría</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # --------------------------------------------------------------------------- #
