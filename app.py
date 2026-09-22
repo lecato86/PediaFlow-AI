@@ -451,8 +451,32 @@ st.markdown(
 # Modelo y recursos
 # --------------------------------------------------------------------------- #
 @st.cache_resource
+def _cargar_modelo(path_str: str, mtime: float, size: int):
+    """Carga el modelo. La caché se invalida si el archivo cambia (mtime/tamaño)."""
+    return joblib.load(Path(path_str))
+
+
 def cargar_modelo(path: Path):
-    return joblib.load(path)
+    st_ = path.stat()
+    return _cargar_modelo(str(path), st_.st_mtime, st_.st_size)
+
+
+def verificar_modelo(modelo):
+    """Comprueba que el modelo espere exactamente las variables de FEATURES."""
+    nombres = getattr(modelo, "feature_names_in_", None)
+    if nombres is None:
+        return
+    nombres = [str(n) for n in nombres]
+    if nombres != FEATURES:
+        st.error(
+            "El archivo `modelo_canula_ingreso.pkl` cargado no corresponde a esta versión "
+            f"de la app. Espera las variables **{', '.join(FEATURES)}** pero el modelo fue "
+            f"entrenado con **{', '.join(nombres)}**.\n\n"
+            "Si acabás de actualizar el modelo, reiniciá la app (en Streamlit Cloud: "
+            "*Manage app → Reboot*; en local: cortá y volvé a ejecutar `streamlit run app.py`) "
+            "o limpiá la caché desde el menú ⋮ → *Clear cache*."
+        )
+        st.stop()
 
 
 @st.cache_data
@@ -480,6 +504,7 @@ if not MODEL_PATH.exists():
     st.stop()
 
 modelo = cargar_modelo(MODEL_PATH)
+verificar_modelo(modelo)
 
 # --------------------------------------------------------------------------- #
 # Encabezado
