@@ -657,7 +657,7 @@ st.markdown(
 
 tal = entrada("Score de Tal", "tal", 0, 12, 6, 1, "%d",
               "Puntaje clínico de Tal (0 a 12).")
-flujo = entrada("Flujo inicial colocado · L/min", "flujo", 1, 60, 10, 1, "%d",
+flujo = entrada("Flujo inicial colocado · L/min", "flujo", 1, 30, 10, 1, "%d",
                 "Flujo total inicial de la cánula, en litros por minuto.")
 
 st.markdown(

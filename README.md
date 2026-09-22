@@ -41,7 +41,7 @@ partir de cuatro datos adicionales.
 | Campo en la app                 | Variable                          | Rango       |
 |---------------------------------|-----------------------------------|-------------|
 | Score de Tal                    | `TAL`                             | 0 – 12      |
-| Flujo inicial colocado (L/min)  | `FLUJO` o `FLUJO_menores/mayores` | 1 – 60      |
+| Flujo inicial colocado (L/min)  | `FLUJO` o `FLUJO_menores/mayores` | 1 – 30      |
 | Frecuencia Respiratoria (rpm)   | → `pROX`                          | 15 – 110    |
 | Saturación de Oxígeno (%)       | → `pROX`                          | 70 – 100    |
 | FiO2 (proporción)               | → `pROX`                          | 0.21 – 1.00 |
