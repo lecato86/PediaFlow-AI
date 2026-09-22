@@ -2,13 +2,16 @@
 PediaFlow-AI - Predicción de riesgo de fracaso de CNAF al ingreso.
 
 Carga el modelo entrenado (modelo_canula_ingreso.pkl) y calcula la probabilidad
-de fracaso a partir de cinco variables clínicas.
+de fracaso a partir de tres variables: Score de Tal, flujo inicial (L/min) y pROX.
+El pROX se calcula automáticamente a partir de la saturación, la FiO2, la
+frecuencia respiratoria y la edad en meses.
 """
 
 import base64
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -50,17 +53,96 @@ def mime_imagen(data: bytes, sufijo: str) -> str:
 LOGO_PATH = buscar_logo()
 
 # Nombres de columnas EXACTOS con los que fue entrenado el modelo, en orden.
-FEATURES = ["tal posta", "fc", "fr", "sat", "l/kg"]
+FEATURES = ["TAL", "FLUJO", "pROX"]
+
+# Frecuencia respiratoria normal para el pROX según la edad.
+PROX_EDAD_CORTE_MESES = 12   # hasta 12 meses inclusive → FR normal 40; más de 12 → 30
+PROX_FR_NORMAL_LACTANTE = 40
+PROX_FR_NORMAL_MAYOR = 30
+
+# Signo aplicado al z del pROX antes de la predicción (ver `normalizar`).
+PROX_SIGNO_Z = -1.0
 
 # Punto de corte óptimo (índice de Youden) y su sensibilidad asociada.
-YOUDEN_PCT = 45.9
-YOUDEN_SENS = 71
+YOUDEN_PCT = 44.4
+YOUDEN_SENS = 100.0
+YOUDEN_ESPEC = 66.7
+
+# Umbral inferior de la zona de riesgo moderado.
+RIESGO_BAJO_PCT = 30.0
+
+
+def fr_normal(edad_meses: float) -> int:
+    """FR normal por edad: 40 rpm hasta los 12 meses inclusive, 30 rpm a partir de ahí."""
+    return PROX_FR_NORMAL_LACTANTE if edad_meses <= PROX_EDAD_CORTE_MESES else PROX_FR_NORMAL_MAYOR
+
+
+def calcular_rrsd(fr: float, edad_meses: float) -> float:
+    """RRSD = FR observada / FR normal por edad."""
+    return fr / fr_normal(edad_meses)
+
+
+def calcular_prox(sat: float, fio2: float, fr: float, edad_meses: float) -> float:
+    """pROX crudo = (SpO2 / FiO2) / RRSD.
+
+    La FiO2 llega como proporción (0,21 a 1,00), que equivale a FiO2 % / 100.
+    """
+    return (sat / fio2) / calcular_rrsd(fr, edad_meses)
+
+
+def normalizar(X: pd.DataFrame, modelo) -> pd.DataFrame:
+    """Estandariza las variables con los metadatos guardados en el .pkl.
+
+    El modelo se entrenó sobre valores normalizados (z = (x - media) / desvío).
+    Las medias y desvíos vienen en `modelo.means_` y `modelo.stds_`, en el mismo
+    orden que FEATURES. Si el archivo no los trae, se devuelven los valores crudos.
+
+    El z del pROX se multiplica por PROX_SIGNO_Z (-1): el coeficiente del pROX en
+    el modelo es levemente positivo por el ajuste conjunto con el TAL, y la
+    inversión garantiza que un pROX alto (mejor oxigenación) reduzca el riesgo.
+    """
+    means = getattr(modelo, "means_", None)
+    stds = getattr(modelo, "stds_", None)
+    if means is None or stds is None:
+        return X
+    means = np.asarray(means, dtype=float).reshape(-1)
+    stds = np.asarray(stds, dtype=float).reshape(-1)
+    if means.shape[0] != len(FEATURES) or stds.shape[0] != len(FEATURES):
+        raise ValueError(
+            f"Los metadatos de escala del modelo tienen {means.shape[0]} valores, "
+            f"pero se esperaban {len(FEATURES)} ({', '.join(FEATURES)})."
+        )
+    stds = np.where(stds == 0, 1.0, stds)  # evita división por cero
+    Z = pd.DataFrame((X.to_numpy(dtype=float) - means) / stds, columns=FEATURES)
+    Z["pROX"] = Z["pROX"] * PROX_SIGNO_Z
+    return Z
+
+
+def predecir_riesgo(modelo, tal, flujo, fr, sat, fio2, edad_meses):
+    """Pasos que se ejecutan al pulsar «Calcular Riesgo».
+
+    1. FR normal por edad (40 si edad <= 12 meses, 30 si es mayor).
+    2. RRSD = FR / FR normal.
+    3. pROX crudo = (SpO2 / FiO2) / RRSD.
+    4. Vector [TAL, FLUJO, pROX] en el orden que espera el modelo.
+    5. Normalización con modelo.means_ y modelo.stds_, con el z del pROX invertido.
+    6. predict_proba → probabilidad de fracaso acotada entre 0 y 100 %.
+    Devuelve (porcentaje, pROX crudo, DataFrame normalizado).
+    """
+    prox_crudo = calcular_prox(sat, fio2, fr, edad_meses)
+    X = pd.DataFrame([[tal, flujo, prox_crudo]], columns=FEATURES, dtype=float)
+    Z = normalizar(X, modelo)
+    proba = modelo.predict_proba(Z)[0]
+    clases = list(getattr(modelo, "classes_", [0, 1]))
+    idx = clases.index(1) if 1 in clases else len(proba) - 1
+    pct = float(np.clip(proba[idx] * 100.0, 0.0, 100.0))
+    return pct, prox_crudo, Z
 
 # Crédito de autoría mostrado bajo el logo y en el pie.
 AUTOR = "Catriel Rossi"
 
 # Desempeño del modelo (área bajo la curva ROC, en %).
-AUC_PCT = 96
+AUC_PCT = 85
 
 def icono_pagina():
     """Ícono de pestaña: el logo como imagen PIL (evita problemas de extensión) o un emoji."""
@@ -259,6 +341,25 @@ st.markdown(
       .pf-method-text {margin: 0; font-size: .9rem; line-height: 1.55; color: #b9c6d9;}
       .pf-method-text b {color: #fff; font-weight: 700;}
 
+      /* pROX calculado automáticamente */
+      .pf-subsection {
+        font-weight: 700; color: #cdd8e8; font-size: .95rem; margin: 18px 0 2px;
+        display: flex; align-items: center; gap: 8px;
+      }
+      .pf-prox {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        padding: 16px 22px; margin: 14px 0 6px;
+        background: linear-gradient(135deg, rgba(47,134,214,.22), rgba(95,227,217,.16));
+        border-color: rgba(95,227,217,.40);
+      }
+      .pf-prox-value {
+        font-size: 2.2rem; font-weight: 800; letter-spacing: -.5px; line-height: 1;
+        background: linear-gradient(90deg, #ffffff, #7fe6e0);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+      .pf-prox-formula {color: #a9b8cf; font-size: .82rem; line-height: 1.45; text-align: right;}
+      .pf-prox-formula b {color: #fff; font-weight: 700;}
+
       .pf-foot {color: #7f91ab; font-size: .8rem; text-align: center; margin-top: 30px;}
 
       /* Expander y tabla en oscuro */
@@ -326,6 +427,9 @@ st.markdown(
         .pf-stat-value {font-size: .88rem;}
         .pf-stat-hl .pf-stat-value {font-size: 1.4rem;}
         .pf-method-text {font-size: .85rem;}
+        .pf-prox {padding: 14px 16px; flex-direction: column; align-items: flex-start; gap: 8px;}
+        .pf-prox-value {font-size: 1.9rem;}
+        .pf-prox-formula {text-align: left; font-size: .78rem;}
       }
 
       /* Pantallas muy chicas (<= 380px) */
@@ -449,14 +553,51 @@ st.markdown(
 
 tal = entrada("Score de Tal", "tal", 0, 12, 6, 1, "%d",
               "Puntaje clínico de Tal (0 a 12).")
-fc = entrada("Frecuencia Cardíaca (FC) · lpm", "fc", 60, 230, 140, 1, "%d",
-             "Latidos por minuto.")
+flujo = entrada("Flujo inicial colocado · L/min", "flujo", 1, 60, 10, 1, "%d",
+                "Flujo total inicial de la cánula, en litros por minuto.")
+
+st.markdown(
+    '<div class="pf-subsection">🧮 Datos para el cálculo automático del pROX</div>',
+    unsafe_allow_html=True,
+)
+st.markdown(
+    '<div class="pf-hint">pROX = (Sat / FiO2) / RRSD, donde RRSD = FR / FR normal por edad. '
+    'La FR normal es 40 rpm hasta los 12 meses inclusive y 30 rpm a partir de ahí. '
+    'El modelo está desarrollado para pacientes de hasta 24 meses.</div>',
+    unsafe_allow_html=True,
+)
+
 fr = entrada("Frecuencia Respiratoria (FR) · rpm", "fr", 15, 110, 50, 1, "%d",
              "Respiraciones por minuto.")
 sat = entrada("Saturación de Oxígeno (Sat) · %", "sat", 70, 100, 93, 1, "%d",
               "Saturación periférica de oxígeno.")
-lkg = entrada("Flujo (L/kg)", "lkg", 0.5, 3.0, 1.5, 0.1, "%.1f",
-              "Litros por minuto por kilogramo de peso.")
+fio2 = entrada("FiO2 · proporción (0,21 a 1,00)", "fio2", 0.21, 1.00, 0.40, 0.01, "%.2f",
+               "Fracción inspirada de oxígeno como proporción: 0,21 = aire ambiente, 1,00 = 100 %.")
+edad = entrada("Edad · meses (0 a 24)", "edad", 0, 24, 6, 1, "%d",
+               "Edad del paciente en meses. El modelo aplica hasta los 24 meses; "
+               "la edad define la FR normal del pROX (40 rpm hasta los 12 meses inclusive, 30 rpm después).")
+
+prox = calcular_prox(sat, fio2, fr, edad)
+fr_ref = fr_normal(edad)
+edad_txt = "hasta 12 meses" if edad <= PROX_EDAD_CORTE_MESES else "mayor de 12 meses"
+prox_txt = f"{prox:.1f}".replace(".", ",")
+fio2_txt = f"{fio2:.2f}".replace(".", ",")
+
+st.markdown(
+    f"""
+    <div class="pf-glass pf-prox">
+      <div>
+        <div class="pf-stat-label">pROX calculado</div>
+        <div class="pf-prox-value">{prox_txt}</div>
+      </div>
+      <div class="pf-prox-formula">
+        ({sat} / {fio2_txt}) / ({fr} / <b>{fr_ref}</b>)<br>
+        Paciente {edad_txt} · FR normal <b>{fr_ref} rpm</b>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.write("")
 calcular = st.button("🔎 Calcular Riesgo")
@@ -465,44 +606,33 @@ calcular = st.button("🔎 Calcular Riesgo")
 # Resultado
 # --------------------------------------------------------------------------- #
 if calcular:
-    X = pd.DataFrame([[tal, fc, fr, sat, lkg]], columns=FEATURES)
-
     try:
-        proba = modelo.predict_proba(X)[0]
-        clases = list(getattr(modelo, "classes_", [0, 1]))
-        idx = clases.index(1) if 1 in clases else len(proba) - 1
-        p = float(proba[idx])
+        pct, prox, Z = predecir_riesgo(modelo, tal, flujo, fr, sat, fio2, edad)
     except Exception as e:  # noqa: BLE001
         st.error(f"Error al ejecutar la predicción: {e}")
         st.stop()
 
-    pct = p * 100
+    prox_txt = f"{prox:.1f}".replace(".", ",")
     pct_txt = f"{pct:.1f}".replace(".", ",")
     youden_txt = f"{YOUDEN_PCT:.1f}".replace(".", ",")
+    sens_txt = f"{YOUDEN_SENS:.1f}".replace(".", ",")
+    espec_txt = f"{YOUDEN_ESPEC:.1f}".replace(".", ",")
 
-    if pct < 30:
+    if pct < RIESGO_BAJO_PCT:
         color, color_dark, icono = "#22c55e", "#0f6b3a", "🟢"
-        nivel, subtitulo = "RIESGO BAJO", "Paciente Seguro"
-        mensaje = (
-            "Probabilidad de fracaso menor al 30 %. El paciente satura bien y presenta "
-            "un Score de Tal bajo. Continuar con el soporte actual y el monitoreo habitual."
-        )
-    elif pct <= 70:
+        nivel, subtitulo = "RIESGO BAJO", "Estabilidad Clínica"
+        mensaje = "Riesgo Bajo. Perfil compatible con estabilidad clínica."
+    elif pct < YOUDEN_PCT:
         color, color_dark, icono = "#f59e0b", "#9a4a06", "🟡"
         nivel, subtitulo = "RIESGO MODERADO", "Monitoreo Estricto"
-        mensaje = (
-            "Probabilidad de fracaso entre 30 % y 70 %. Zona gris donde el paciente "
-            "empieza a descompensarse. Se recomienda vigilancia estrecha, reevaluación "
-            "clínica frecuente y optimización de parámetros."
-        )
+        mensaje = "Riesgo Moderado. Se sugiere monitoreo estricto."
     else:
         color, color_dark, icono = "#ef4444", "#8f1d1d", "🚨"
-        nivel, subtitulo = "RIESGO ALTO", "Alerta de Fallo"
+        nivel, subtitulo = "ALERTA CRÍTICA DE FRACASO", f"Sensibilidad del modelo: {sens_txt} %"
         mensaje = (
-            "Probabilidad de fracaso mayor al 70 %. El modelo confirma de forma "
-            "multivariada que el paciente comparte el perfil del Cluster 1 de fracaso "
-            "histórico. Considerar escalar el soporte respiratorio y evaluar ingreso o "
-            "traslado a cuidados intensivos."
+            f"🚨 ALERTA CRÍTICA DE FRACASO (Sensibilidad del modelo: {sens_txt} %). "
+            "El perfil comparte criterios con el grupo de fallo histórico. "
+            "Evaluar de inmediato estrategias alternativas."
         )
 
     st.markdown(
@@ -516,13 +646,13 @@ if calcular:
             <div class="pf-youden-line" style="left:{YOUDEN_PCT}%"></div>
             <div class="pf-youden-tag" style="left:{YOUDEN_PCT}%">
               ÍNDICE DE YOUDEN {youden_txt}%<br>
-              <span>Sensibilidad {YOUDEN_SENS}%</span>
+              <span>Sensibilidad {sens_txt}% · Especificidad {espec_txt}%</span>
             </div>
           </div>
-          <div class="pf-scale"><span>0%</span><span>30%</span><span>70%</span><span>100%</span></div>
+          <div class="pf-scale"><span>0%</span><span>30%</span><span>{youden_txt}%</span><span>100%</span></div>
         </div>
         <div class="pf-glass pf-alert" style="border-left-color:{color};">
-          <b>{icono} Alerta clínica · {nivel.title()} ({subtitulo})</b>
+          <b>{icono} Alerta clínica · {nivel.title()}</b>
           {mensaje}
         </div>
         """,
@@ -533,33 +663,50 @@ if calcular:
         st.dataframe(
             pd.DataFrame(
                 {
-                    "Variable": ["Score de Tal", "FC (lpm)", "FR (rpm)", "Sat (%)", "L/kg"],
-                    "Valor": [tal, fc, fr, sat, f"{lkg:.1f}"],
+                    "Variable": [
+                        "Score de Tal (TAL)", "Flujo inicial (FLUJO, L/min)",
+                        "pROX calculado", "FR (rpm)", "Sat (%)", "FiO2 (proporción)",
+                        "Edad (meses)", "FR normal por edad (rpm)", "RRSD (FR / FR normal)",
+                        "z TAL", "z FLUJO", "z pROX (invertido)",
+                    ],
+                    "Valor": [
+                        str(tal), str(flujo), prox_txt, str(fr), str(sat), fio2_txt,
+                        str(edad), str(fr_ref),
+                        f"{calcular_rrsd(fr, edad):.2f}".replace(".", ","),
+                        f"{Z['TAL'].iloc[0]:+.2f}".replace(".", ","),
+                        f"{Z['FLUJO'].iloc[0]:+.2f}".replace(".", ","),
+                        f"{Z['pROX'].iloc[0]:+.2f}".replace(".", ","),
+                    ],
                 }
             ),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
 
+_youden_txt = f"{YOUDEN_PCT:.1f}".replace(".", ",")
+_sens_txt = f"{YOUDEN_SENS:.1f}".replace(".", ",")
+_espec_txt = f"{YOUDEN_ESPEC:.1f}".replace(".", ",")
 st.markdown(
-    """
+    f"""
     <div class="pf-glass pf-legend">
-      <div class="pf-legend-title">Escala de riesgo</div>
+      <div class="pf-legend-title">Escala de riesgo · índice de Youden {_youden_txt} %</div>
       <div class="pf-legend-row">
         <span class="pf-dot" style="background:#22c55e; color:#22c55e"></span>
-        <div><b>🟢 Riesgo Bajo · Paciente Seguro</b>
-        Probabilidad de fracaso menor al 30 % (saturando bien, TAL bajo).</div>
+        <div><b>🟢 Riesgo Bajo · Estabilidad clínica</b>
+        Probabilidad de fracaso menor al 30 %. Perfil compatible con estabilidad clínica.</div>
       </div>
       <div class="pf-legend-row">
         <span class="pf-dot" style="background:#f59e0b; color:#f59e0b"></span>
-        <div><b>🟡 Riesgo Moderado · Monitoreo Estricto</b>
-        Entre 30 % y 70 %: zona gris donde el paciente empieza a descompensarse.</div>
+        <div><b>🟡 Riesgo Moderado · Monitoreo estricto</b>
+        Entre 30 % y {_youden_txt} %. Se sugiere monitoreo estricto.</div>
       </div>
       <div class="pf-legend-row">
         <span class="pf-dot" style="background:#ef4444; color:#ef4444"></span>
-        <div><b>🚨 Riesgo Alto · Alerta de Fallo</b>
-        Mayor al 70 %: el modelo confirma de forma multivariada que el paciente comparte
-        el perfil del Cluster 1 de fracaso histórico.</div>
+        <div><b>🚨 Alerta crítica de fracaso</b>
+        Igual o mayor al {_youden_txt} % (índice de Youden, sensibilidad {_sens_txt} %,
+        especificidad {_espec_txt} %):
+        el perfil comparte criterios con el grupo de fallo histórico.
+        Evaluar de inmediato estrategias alternativas.</div>
       </div>
     </div>
     """,
@@ -593,12 +740,17 @@ st.markdown(
         pediátricos con CNAF. Primero se redujo la dimensionalidad con <b>PCA</b> (análisis de
         componentes principales) y se identificaron perfiles de pacientes mediante
         <b>K-Means</b>, distinguiendo el clúster de fracaso histórico. Luego se entrenó un
-        modelo de <b>regresión logística</b> (logistic regression) que alcanzó un
+        modelo de <b>regresión logística</b> (logistic regression) con tres variables:
+        <b>Score de Tal</b>, <b>flujo inicial</b> (L/min) y <b>pROX</b>, un índice de
+        oxigenación ajustado por edad que la app calcula automáticamente a partir de la
+        saturación, la FiO2, la frecuencia respiratoria y la edad. El modelo alcanzó un
         <b>AUC de {AUC_PCT}%</b>; el punto de corte óptimo se fijó con el índice de Youden
-        ({YOUDEN_PCT:.1f}%, sensibilidad {YOUDEN_SENS}%).
+        ({_youden_txt}%, sensibilidad {_sens_txt}%, especificidad {_espec_txt}%). Las
+        variables se estandarizan con las
+        medias y desvíos guardados en el modelo antes de cada predicción.
       </p>
     </div>
-    """.replace(f"{YOUDEN_PCT:.1f}", f"{YOUDEN_PCT:.1f}".replace(".", ",")),
+    """,
     unsafe_allow_html=True,
 )
 
