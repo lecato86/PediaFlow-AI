@@ -2,9 +2,11 @@
 PediaFlow-AI - Predicción de riesgo de fracaso de CNAF al ingreso.
 
 Carga el modelo entrenado (modelo_canula_ingreso.pkl) y calcula la probabilidad
-de fracaso a partir de tres variables: Score de Tal, flujo inicial (L/min) y pROX.
-El pROX se calcula automáticamente a partir de la saturación, la FiO2, la
-frecuencia respiratoria y la edad en meses.
+de fracaso a partir de Score de Tal, flujo inicial (L/min) y pROX. El modelo
+declara sus variables en `variables_`; la app admite el flujo directo (FLUJO) o
+estratificado por edad (FLUJO_menores / FLUJO_mayores). El pROX se calcula
+automáticamente a partir de la saturación, la FiO2, la frecuencia respiratoria y
+la edad en meses.
 """
 
 import base64
@@ -52,24 +54,61 @@ def mime_imagen(data: bytes, sufijo: str) -> str:
 
 LOGO_PATH = buscar_logo()
 
-# Nombres de columnas EXACTOS con los que fue entrenado el modelo, en orden.
-FEATURES = ["TAL", "FLUJO", "pROX"]
+# Variables que la app sabe construir a partir del formulario. El modelo declara
+# cuáles usa (y en qué orden) en `modelo.variables_` o `feature_names_in_`.
+VARIABLES_CONOCIDAS = ["TAL", "FLUJO", "pROX", "FLUJO_menores", "FLUJO_mayores"]
 
 # Frecuencia respiratoria normal para el pROX según la edad.
 PROX_EDAD_CORTE_MESES = 12   # hasta 12 meses inclusive → FR normal 40; más de 12 → 30
 PROX_FR_NORMAL_LACTANTE = 40
 PROX_FR_NORMAL_MAYOR = 30
 
+# Flujo estratificado por edad: FLUJO_menores toma el flujo hasta esta edad
+# inclusive (y 0 después); FLUJO_mayores, al revés.
+FLUJO_EDAD_CORTE_MESES = 12
+
 # Signo aplicado al z del pROX antes de la predicción (ver `normalizar`).
 PROX_SIGNO_Z = -1.0
 
-# Punto de corte óptimo (índice de Youden) y su sensibilidad asociada.
-YOUDEN_PCT = 44.4
-YOUDEN_SENS = 100.0
-YOUDEN_ESPEC = 66.7
-
 # Umbral inferior de la zona de riesgo moderado.
 RIESGO_BAJO_PCT = 30.0
+
+# Métricas de validación de cada modelo conocido, identificadas por su conjunto
+# de variables. Se eligen automáticamente según el .pkl cargado.
+MODELOS = {
+    frozenset(["TAL", "FLUJO", "pROX"]): dict(
+        nombre="Regresión logística · 3 variables",
+        auc=85.6, youden=44.4, sens=100.0, espec=66.7,
+        variables_txt="<b>Score de Tal</b>, <b>flujo inicial</b> (L/min) y <b>pROX</b>",
+    ),
+    frozenset(["TAL", "pROX", "FLUJO_menores", "FLUJO_mayores"]): dict(
+        nombre="Regresión logística · flujo estratificado por edad",
+        auc=80.6, youden=50.2, sens=75.0, espec=80.0,
+        variables_txt=(
+            "<b>Score de Tal</b>, <b>pROX</b> y el <b>flujo inicial</b> (L/min) "
+            "estratificado por edad, con un coeficiente propio para los lactantes de hasta "
+            f"{FLUJO_EDAD_CORTE_MESES} meses y otro para los mayores"
+        ),
+    ),
+}
+METRICAS_DESCONOCIDAS = dict(
+    nombre="Regresión logística", auc=None, youden=50.0, sens=None, espec=None,
+    variables_txt="las variables declaradas en el archivo del modelo",
+)
+
+
+def variables_modelo(modelo) -> list:
+    """Variables que espera el modelo, en orden, leídas del propio .pkl."""
+    nombres = getattr(modelo, "variables_", None)
+    if nombres is None:
+        nombres = getattr(modelo, "feature_names_in_", None)
+    if nombres is None:
+        return ["TAL", "FLUJO", "pROX"]
+    return [str(n) for n in nombres]
+
+
+def metricas_modelo(modelo) -> dict:
+    return MODELOS.get(frozenset(variables_modelo(modelo)), METRICAS_DESCONOCIDAS)
 
 
 def fr_normal(edad_meses: float) -> int:
@@ -90,31 +129,46 @@ def calcular_prox(sat: float, fio2: float, fr: float, edad_meses: float) -> floa
     return (sat / fio2) / calcular_rrsd(fr, edad_meses)
 
 
+def construir_variables(tal, flujo, prox, edad_meses) -> dict:
+    """Todas las variables que la app sabe calcular, a partir del formulario."""
+    lactante = edad_meses <= FLUJO_EDAD_CORTE_MESES
+    return {
+        "TAL": float(tal),
+        "FLUJO": float(flujo),
+        "pROX": float(prox),
+        "FLUJO_menores": float(flujo) if lactante else 0.0,
+        "FLUJO_mayores": 0.0 if lactante else float(flujo),
+    }
+
+
 def normalizar(X: pd.DataFrame, modelo) -> pd.DataFrame:
     """Estandariza las variables con los metadatos guardados en el .pkl.
 
     El modelo se entrenó sobre valores normalizados (z = (x - media) / desvío).
     Las medias y desvíos vienen en `modelo.means_` y `modelo.stds_`, en el mismo
-    orden que FEATURES. Si el archivo no los trae, se devuelven los valores crudos.
+    orden que las columnas de X. Si el archivo no los trae, se devuelven los
+    valores crudos.
 
     El z del pROX se multiplica por PROX_SIGNO_Z (-1): el coeficiente del pROX en
     el modelo es levemente positivo por el ajuste conjunto con el TAL, y la
     inversión garantiza que un pROX alto (mejor oxigenación) reduzca el riesgo.
     """
+    columnas = list(X.columns)
     means = getattr(modelo, "means_", None)
     stds = getattr(modelo, "stds_", None)
     if means is None or stds is None:
         return X
     means = np.asarray(means, dtype=float).reshape(-1)
     stds = np.asarray(stds, dtype=float).reshape(-1)
-    if means.shape[0] != len(FEATURES) or stds.shape[0] != len(FEATURES):
+    if means.shape[0] != len(columnas) or stds.shape[0] != len(columnas):
         raise ValueError(
             f"Los metadatos de escala del modelo tienen {means.shape[0]} valores, "
-            f"pero se esperaban {len(FEATURES)} ({', '.join(FEATURES)})."
+            f"pero se esperaban {len(columnas)} ({', '.join(columnas)})."
         )
     stds = np.where(stds == 0, 1.0, stds)  # evita división por cero
-    Z = pd.DataFrame((X.to_numpy(dtype=float) - means) / stds, columns=FEATURES)
-    Z["pROX"] = Z["pROX"] * PROX_SIGNO_Z
+    Z = pd.DataFrame((X.to_numpy(dtype=float) - means) / stds, columns=columnas)
+    if "pROX" in Z.columns:
+        Z["pROX"] = Z["pROX"] * PROX_SIGNO_Z
     return Z
 
 
@@ -124,13 +178,16 @@ def predecir_riesgo(modelo, tal, flujo, fr, sat, fio2, edad_meses):
     1. FR normal por edad (40 si edad <= 12 meses, 30 si es mayor).
     2. RRSD = FR / FR normal.
     3. pROX crudo = (SpO2 / FiO2) / RRSD.
-    4. Vector [TAL, FLUJO, pROX] en el orden que espera el modelo.
-    5. Normalización con modelo.means_ y modelo.stds_, con el z del pROX invertido.
-    6. predict_proba → probabilidad de fracaso acotada entre 0 y 100 %.
+    4. Flujo estratificado: FLUJO_menores / FLUJO_mayores según la edad.
+    5. Vector con las variables en el orden que declara el modelo.
+    6. Normalización con modelo.means_ y modelo.stds_, con el z del pROX invertido.
+    7. predict_proba → probabilidad de fracaso acotada entre 0 y 100 %.
     Devuelve (porcentaje, pROX crudo, DataFrame normalizado).
     """
     prox_crudo = calcular_prox(sat, fio2, fr, edad_meses)
-    X = pd.DataFrame([[tal, flujo, prox_crudo]], columns=FEATURES, dtype=float)
+    variables = variables_modelo(modelo)
+    valores = construir_variables(tal, flujo, prox_crudo, edad_meses)
+    X = pd.DataFrame([[valores[v] for v in variables]], columns=variables, dtype=float)
     Z = normalizar(X, modelo)
     proba = modelo.predict_proba(Z)[0]
     clases = list(getattr(modelo, "classes_", [0, 1]))
@@ -140,9 +197,6 @@ def predecir_riesgo(modelo, tal, flujo, fr, sat, fio2, edad_meses):
 
 # Crédito de autoría mostrado bajo el logo y en el pie.
 AUTOR = "Catriel Rossi"
-
-# Desempeño del modelo (área bajo la curva ROC, en %).
-AUC_PCT = 85
 
 def icono_pagina():
     """Ícono de pestaña: el logo como imagen PIL (evita problemas de extensión) o un emoji."""
@@ -462,16 +516,25 @@ def cargar_modelo(path: Path):
 
 
 def verificar_modelo(modelo):
-    """Comprueba que el modelo espere exactamente las variables de FEATURES."""
-    nombres = getattr(modelo, "feature_names_in_", None)
-    if nombres is None:
-        return
-    nombres = [str(n) for n in nombres]
-    if nombres != FEATURES:
+    """Comprueba que la app sepa construir todas las variables que pide el modelo."""
+    nombres = variables_modelo(modelo)
+    desconocidas = [n for n in nombres if n not in VARIABLES_CONOCIDAS]
+    means = getattr(modelo, "means_", None)
+    stds = getattr(modelo, "stds_", None)
+    escala_ok = means is None or stds is None or (
+        len(np.asarray(means).reshape(-1)) == len(nombres)
+        and len(np.asarray(stds).reshape(-1)) == len(nombres)
+    )
+    if desconocidas or not escala_ok:
+        detalle = (
+            f"pide las variables **{', '.join(desconocidas)}**, que la app no sabe calcular"
+            if desconocidas
+            else "trae medias y desvíos que no coinciden con la cantidad de variables"
+        )
         st.error(
-            "El archivo `modelo_canula_ingreso.pkl` cargado no corresponde a esta versión "
-            f"de la app. Espera las variables **{', '.join(FEATURES)}** pero el modelo fue "
-            f"entrenado con **{', '.join(nombres)}**.\n\n"
+            f"El archivo `modelo_canula_ingreso.pkl` cargado no corresponde a esta versión "
+            f"de la app: {detalle}. Variables del modelo: **{', '.join(nombres)}**. "
+            f"La app conoce: {', '.join(VARIABLES_CONOCIDAS)}.\n\n"
             "Si acabás de actualizar el modelo, reiniciá la app (en Streamlit Cloud: "
             "*Manage app → Reboot*; en local: cortá y volvé a ejecutar `streamlit run app.py`) "
             "o limpiá la caché desde el menú ⋮ → *Clear cache*."
@@ -505,6 +568,22 @@ if not MODEL_PATH.exists():
 
 modelo = cargar_modelo(MODEL_PATH)
 verificar_modelo(modelo)
+
+VARIABLES = variables_modelo(modelo)
+METRICAS = metricas_modelo(modelo)
+
+# Punto de corte óptimo (índice de Youden), sensibilidad y especificidad del modelo cargado.
+YOUDEN_PCT = float(METRICAS["youden"])
+YOUDEN_SENS = METRICAS["sens"]
+YOUDEN_ESPEC = METRICAS["espec"]
+AUC_PCT = METRICAS["auc"]
+
+
+def pct_txt_es(valor, decimales=1) -> str:
+    """Formatea un porcentaje con coma decimal; «—» si no hay dato."""
+    if valor is None:
+        return "—"
+    return f"{valor:.{decimales}f}".replace(".", ",")
 
 # --------------------------------------------------------------------------- #
 # Encabezado
@@ -639,9 +718,9 @@ if calcular:
 
     prox_txt = f"{prox:.1f}".replace(".", ",")
     pct_txt = f"{pct:.1f}".replace(".", ",")
-    youden_txt = f"{YOUDEN_PCT:.1f}".replace(".", ",")
-    sens_txt = f"{YOUDEN_SENS:.1f}".replace(".", ",")
-    espec_txt = f"{YOUDEN_ESPEC:.1f}".replace(".", ",")
+    youden_txt = pct_txt_es(YOUDEN_PCT)
+    sens_txt = pct_txt_es(YOUDEN_SENS)
+    espec_txt = pct_txt_es(YOUDEN_ESPEC)
 
     if pct < RIESGO_BAJO_PCT:
         color, color_dark, icono = "#22c55e", "#0f6b3a", "🟢"
@@ -692,25 +771,24 @@ if calcular:
                         "Score de Tal (TAL)", "Flujo inicial (FLUJO, L/min)",
                         "pROX calculado", "FR (rpm)", "Sat (%)", "FiO2 (proporción)",
                         "Edad (meses)", "FR normal por edad (rpm)", "RRSD (FR / FR normal)",
-                        "z TAL", "z FLUJO", "z pROX (invertido)",
-                    ],
+                        "Variables del modelo",
+                    ] + [f"z {c}" + (" (invertido)" if c == "pROX" else "") for c in Z.columns],
                     "Valor": [
                         str(tal), str(flujo), prox_txt, str(fr), str(sat), fio2_txt,
                         str(edad), str(fr_ref),
                         f"{calcular_rrsd(fr, edad):.2f}".replace(".", ","),
-                        f"{Z['TAL'].iloc[0]:+.2f}".replace(".", ","),
-                        f"{Z['FLUJO'].iloc[0]:+.2f}".replace(".", ","),
-                        f"{Z['pROX'].iloc[0]:+.2f}".replace(".", ","),
-                    ],
+                        ", ".join(Z.columns),
+                    ] + [f"{Z[c].iloc[0]:+.2f}".replace(".", ",") for c in Z.columns],
                 }
             ),
             hide_index=True,
             width="stretch",
         )
 
-_youden_txt = f"{YOUDEN_PCT:.1f}".replace(".", ",")
-_sens_txt = f"{YOUDEN_SENS:.1f}".replace(".", ",")
-_espec_txt = f"{YOUDEN_ESPEC:.1f}".replace(".", ",")
+_youden_txt = pct_txt_es(YOUDEN_PCT)
+_sens_txt = pct_txt_es(YOUDEN_SENS)
+_espec_txt = pct_txt_es(YOUDEN_ESPEC)
+_auc_txt = pct_txt_es(AUC_PCT)
 st.markdown(
     f"""
     <div class="pf-glass pf-legend">
@@ -753,11 +831,11 @@ st.markdown(
         </div>
         <div class="pf-stat">
           <div class="pf-stat-label">Algoritmo</div>
-          <div class="pf-stat-value">Regresión logística</div>
+          <div class="pf-stat-value">{METRICAS["nombre"]}</div>
         </div>
         <div class="pf-stat pf-stat-hl">
-          <div class="pf-stat-label">AUC</div>
-          <div class="pf-stat-value">{AUC_PCT}%</div>
+          <div class="pf-stat-label">AUC validado</div>
+          <div class="pf-stat-value">{_auc_txt}%</div>
         </div>
       </div>
       <p class="pf-method-text">
@@ -765,14 +843,14 @@ st.markdown(
         pediátricos con CNAF. Primero se redujo la dimensionalidad con <b>PCA</b> (análisis de
         componentes principales) y se identificaron perfiles de pacientes mediante
         <b>K-Means</b>, distinguiendo el clúster de fracaso histórico. Luego se entrenó un
-        modelo de <b>regresión logística</b> (logistic regression) con tres variables:
-        <b>Score de Tal</b>, <b>flujo inicial</b> (L/min) y <b>pROX</b>, un índice de
-        oxigenación ajustado por edad que la app calcula automáticamente a partir de la
-        saturación, la FiO2, la frecuencia respiratoria y la edad. El modelo alcanzó un
-        <b>AUC de {AUC_PCT}%</b>; el punto de corte óptimo se fijó con el índice de Youden
+        modelo de <b>regresión logística</b> (logistic regression) con {METRICAS["variables_txt"]}.
+        El pROX es un índice de oxigenación ajustado por edad que la app calcula
+        automáticamente a partir de la saturación, la FiO2, la frecuencia respiratoria y la
+        edad. En el conjunto de validación (20 % de los pacientes) el modelo alcanzó un
+        <b>AUC de {_auc_txt}%</b>; el punto de corte óptimo se fijó con el índice de Youden
         ({_youden_txt}%, sensibilidad {_sens_txt}%, especificidad {_espec_txt}%). Las
-        variables se estandarizan con las
-        medias y desvíos guardados en el modelo antes de cada predicción.
+        variables se estandarizan con las medias y desvíos guardados en el modelo antes de
+        cada predicción.
       </p>
     </div>
     """,

@@ -26,20 +26,29 @@ en la misma carpeta que `app.py`.
 
 ## Variables de entrada
 
-El modelo usa tres columnas: `TAL`, `FLUJO` y `pROX`. Las dos primeras se
-cargan directamente; el `pROX` se calcula de forma automática a partir de
-cuatro datos adicionales.
+El modelo declara sus variables en `modelo.variables_` (o `feature_names_in_`)
+y la app las construye a partir del formulario. La app admite dos modelos:
 
-| Campo en la app                 | Columna del modelo | Rango       |
-|---------------------------------|--------------------|-------------|
-| Score de Tal                    | `TAL`              | 0 – 12      |
-| Flujo inicial colocado (L/min)  | `FLUJO`            | 1 – 60      |
-| Frecuencia Respiratoria (rpm)   | → `pROX`           | 15 – 110    |
-| Saturación de Oxígeno (%)       | → `pROX`           | 70 – 100    |
-| FiO2 (proporción)               | → `pROX`           | 0.21 – 1.00 |
-| Edad (meses)                    | → `pROX`           | 0 – 24      |
+| Modelo                          | Variables del `.pkl`                              |
+|---------------------------------|---------------------------------------------------|
+| 3 variables                     | `TAL`, `FLUJO`, `pROX`                            |
+| Flujo estratificado por edad    | `TAL`, `pROX`, `FLUJO_menores`, `FLUJO_mayores`   |
 
-El modelo está desarrollado para pacientes de hasta 24 meses.
+`FLUJO_menores` vale el flujo si la edad es ≤ 12 meses y 0 en caso contrario;
+`FLUJO_mayores` es el complemento. El `pROX` se calcula de forma automática a
+partir de cuatro datos adicionales.
+
+| Campo en la app                 | Variable                          | Rango       |
+|---------------------------------|-----------------------------------|-------------|
+| Score de Tal                    | `TAL`                             | 0 – 12      |
+| Flujo inicial colocado (L/min)  | `FLUJO` o `FLUJO_menores/mayores` | 1 – 60      |
+| Frecuencia Respiratoria (rpm)   | → `pROX`                          | 15 – 110    |
+| Saturación de Oxígeno (%)       | → `pROX`                          | 70 – 100    |
+| FiO2 (proporción)               | → `pROX`                          | 0.21 – 1.00 |
+| Edad (meses)                    | → `pROX` y estrato de flujo       | 0 – 24      |
+
+El modelo está desarrollado para pacientes de hasta 24 meses. Si el `.pkl`
+pide una variable que la app no conoce, se muestra un error explicativo.
 
 ### Pasos al pulsar «Calcular Riesgo»
 
@@ -47,7 +56,9 @@ El modelo está desarrollado para pacientes de hasta 24 meses.
 2. **RRSD** = FR / FR normal.
 3. **pROX crudo** = (SpO2 / FiO2) / RRSD. La FiO2 se ingresa como proporción
    (0.21 = aire ambiente, 1.00 = 100 %), que equivale a FiO2 % / 100.
-4. Vector `[TAL, FLUJO, pROX]` en el orden que espera el modelo.
+4. **Flujo estratificado** (si el modelo lo pide): `FLUJO_menores` /
+   `FLUJO_mayores` según la edad, y vector con las variables en el orden que
+   declara el modelo.
 5. **Normalización** con los metadatos guardados en el `.pkl`
    (`modelo.means_` y `modelo.stds_`): `z = (x - media) / desvío`.
    El z del pROX se multiplica por −1 antes de la predicción: el coeficiente del
@@ -55,21 +66,30 @@ El modelo está desarrollado para pacientes de hasta 24 meses.
    inversión garantiza que un pROX alto (mejor oxigenación) reduzca el riesgo.
 6. `predict_proba` → probabilidad de fracaso, acotada entre 0 % y 100 %.
 
-## Escala de riesgo (índice de Youden 44,4 %)
+## Escala de riesgo
+
+El corte de alerta es el índice de Youden del modelo cargado (ver tabla abajo).
+
 - 🟢 **Riesgo Bajo**: menor al 30 %. Perfil compatible con estabilidad clínica.
-- 🟡 **Riesgo Moderado**: entre 30 % y 44,3 %. Se sugiere monitoreo estricto.
-- 🚨 **Alerta crítica de fracaso**: igual o mayor al 44,4 % (Youden, sensibilidad
-  100 %, especificidad 66,7 %). El perfil comparte criterios con el grupo de fallo
-  histórico. Evaluar de inmediato estrategias alternativas.
+- 🟡 **Riesgo Moderado**: entre 30 % y el corte de Youden. Se sugiere monitoreo
+  estricto.
+- 🚨 **Alerta crítica de fracaso**: igual o mayor al corte de Youden. El perfil
+  comparte criterios con el grupo de fallo histórico. Evaluar de inmediato
+  estrategias alternativas.
 
 ## Sobre el modelo
 
 - **Enfoque**: análisis multivariado de pacientes pediátricos con CNAF.
 - **Segmentación**: reducción de dimensionalidad con PCA y clustering con K-Means,
   que identificó el clúster de fracaso histórico (Cluster 1).
-- **Algoritmo**: regresión logística (logistic regression) con tres variables
-  (`TAL`, `FLUJO`, `pROX`), entrenada con scikit-learn 1.6.1.
-- **Desempeño**: AUC de 85 %.
-- **Punto de corte**: índice de Youden en 44,4 % de probabilidad, con
-  sensibilidad del 100 % y especificidad del 66,7 %.
+- **Algoritmo**: regresión logística (logistic regression), entrenada con
+  scikit-learn 1.6.1 sobre el 80 % de los pacientes y validada en el 20 % restante.
+- **Métricas por modelo** (conjunto de validación), elegidas automáticamente
+  según las variables del `.pkl`:
+
+| Modelo                       | AUC    | Corte Youden | Sensibilidad | Especificidad |
+|------------------------------|--------|--------------|--------------|---------------|
+| 3 variables                  | 85,6 % | 44,4 %       | 100 %        | 66,7 %        |
+| Flujo estratificado por edad | 80,6 % | 50,2 %       | 75 %         | 80 %          |
+
 - **Autor**: Catriel Rossi.
